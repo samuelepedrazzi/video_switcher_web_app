@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,22 +9,30 @@
         body {
             text-align: center;
             margin: 0;
-            overflow: hidden; /* Nasconde eventuali barre di scorrimento */
+            overflow: hidden;
+            /* Nasconde eventuali barre di scorrimento */
         }
+
         .video-container {
             position: relative;
             display: inline-block;
-            width: 100vw; /* Usa tutta la larghezza della finestra */
-            height: 100vh; /* Usa tutta l'altezza della finestra */
+            width: 100vw;
+            /* Usa tutta la larghezza della finestra */
+            height: 100vh;
+            /* Usa tutta l'altezza della finestra */
         }
+
         iframe {
             width: 100%;
             height: 100%;
-            border: none; /* Rimuovi bordi dall'iframe */
+            border: none;
+            /* Rimuovi bordi dall'iframe */
         }
+
         .controls {
             position: absolute;
-            bottom: 20px; /* Posiziona i controlli a 20px dal fondo */
+            bottom: 20px;
+            /* Posiziona i controlli a 20px dal fondo */
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -31,49 +40,51 @@
             gap: 10px;
             z-index: 10;
         }
+
         .controls button,
         .fullscreen-button {
             color: white;
-            background: rgba(51, 51, 51, 0.8); /* Sfondo semi-trasparente per i pulsanti */
+            background: rgba(51, 51, 51, 0.8);
+            /* Sfondo semi-trasparente per i pulsanti */
             border: none;
             padding: 10px 20px;
             cursor: pointer;
             border-radius: 20px;
             font-size: 14px;
         }
+
         .fullscreen-button {
             position: absolute;
-            top: 10px; /* Posiziona il pulsante fullscreen in alto a destra */
+            top: 10px;
+            /* Posiziona il pulsante fullscreen in alto a destra */
             right: 10px;
-        }
-        .error-message {
-            color: red;
-            font-size: 18px;
-            margin-top: 20px;
         }
     </style>
 </head>
+
 <body>
+
     <div class="video-container" id="videoContainer">
+        <!-- Video da caricare dinamicamente -->
         <iframe id="video1" src="" title="Video 1" style="display:none;"></iframe>
         <iframe id="video2" src="" title="Video 2" style="display:none;"></iframe>
+
         <div class="controls">
             <button id="backward">-5</button>
             <button id="switchButton">Switch Video</button>
             <button id="forward">+5</button>
         </div>
+
         <button class="fullscreen-button" id="fullscreenBtn">Fullscreen</button>
     </div>
-    <div id="errorMessage" class="error-message" style="display:none;"></div>
 
     <script src="https://player.vimeo.com/api/player.js"></script>
     <script>
         // Aggiungi il tuo access token qui
-        const accessToken = 'a9b22d79485ad20611e2902ee3096dfe'; // Inserisci il tuo access token Vimeo
+        const accessToken = 'a9b22d79485ad20611e2902ee3096dfe'; // Inserisci il tuo token di accesso Vimeo
 
         const video1 = document.getElementById('video1');
         const video2 = document.getElementById('video2');
-        const errorMessage = document.getElementById('errorMessage');
         const switchButton = document.getElementById('switchButton');
         const forwardButton = document.getElementById('forward');
         const backwardButton = document.getElementById('backward');
@@ -83,76 +94,71 @@
         let player1, player2;
         let currentPlayer;
 
-        // Mappa di esempio per associare matchID a video Vimeo
-        const videoAssociations = {
-            "1234": ["123456789", "987654321"], // Sostituisci con i tuoi video ID
-            "5678": ["234567890", "876543210"]  // Altri matchID con relativi video
-        };
-
-        // Funzione per ottenere i video in base alla query string
-        function loadVideos() {
+        // Funzione per ottenere il parametro 'game' dalla query string
+        function getGameParam() {
             const urlParams = new URLSearchParams(window.location.search);
-            const matchID = urlParams.get('matchID');
+            return urlParams.get('game');
+        }
 
-            if (matchID && videoAssociations[matchID]) {
-                const [videoID1, videoID2] = videoAssociations[matchID];
-                video1.src = `https://player.vimeo.com/video/${videoID1}`;
-                video2.src = `https://player.vimeo.com/video/${videoID2}`;
-                video1.style.display = 'block';
-                video2.style.display = 'block';
+        // Funzione per ottenere i video dal tuo account Vimeo
+        function getVimeoVideos() {
+            const gameParam = getGameParam();
 
-                // Inizializza i player
-                player1 = new Vimeo.Player(video1);
-                player2 = new Vimeo.Player(video2);
-                currentPlayer = player1;
-            } else if (matchID) {
-                // Mostra errore se matchID non è valido
-                errorMessage.textContent = 'Errore: matchID non trovato!';
-                errorMessage.style.display = 'block';
+            if (gameParam) {
+                // Crea i nomi dei video in base al parametro game
+                const video1Name = gameParam + '_A'; // Il nome del primo video
+                const video2Name = gameParam + '_B'; // Il nome del secondo video
+
+                fetch('https://api.vimeo.com/me/videos', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}` // Usa il tuo token di accesso qui
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Filtra i video in base al nome
+                    const videos = data.data;
+                    const firstVideo = videos.find(video => video.name === video1Name);
+                    const secondVideo = videos.find(video => video.name === video2Name);
+
+                    if (firstVideo) {
+                        const embedUrl1 = `https://player.vimeo.com/video/${firstVideo.uri.split('/')[2]}`;
+                        video1.src = embedUrl1;
+                        video1.style.display = 'block';
+                        player1 = new Vimeo.Player(video1);
+                    } else {
+                        console.log(`Video con nome ${video1Name} non trovato`);
+                    }
+
+                    if (secondVideo) {
+                        const embedUrl2 = `https://player.vimeo.com/video/${secondVideo.uri.split('/')[2]}`;
+                        video2.src = embedUrl2;
+                        video2.style.display = 'block';
+                        player2 = new Vimeo.Player(video2);
+                    } else {
+                        console.log(`Video con nome ${video2Name} non trovato`);
+                    }
+
+                    // Imposta il player corrente
+                    currentPlayer = player1 || player2; // Se il primo video non è trovato, usa il secondo
+                })
+                .catch(error => {
+                    console.error('Errore nel recupero dei video:', error);
+                });
             } else {
-                // Se non c'è matchID, carica gli ultimi video
-                getVimeoVideos();
+                console.log('Parametro game non trovato nell\'URL.');
             }
         }
 
-        // Funzione per ottenere gli ultimi video dal tuo account Vimeo
-        function getVimeoVideos() {
-            fetch('https://api.vimeo.com/me/videos', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                const videos = data.data;
-                if (videos.length > 0) {
-                    const firstVideo = videos[0];
-                    const secondVideo = videos.length > 1 ? videos[1] : null;
+        // Chiamata alla funzione per ottenere i video al caricamento della pagina
+        getVimeoVideos();
 
-                    video1.src = `https://player.vimeo.com/video/${firstVideo.uri.split('/')[2]}`;
-                    video1.style.display = 'block';
-                    player1 = new Vimeo.Player(video1);
-
-                    if (secondVideo) {
-                        video2.src = `https://player.vimeo.com/video/${secondVideo.uri.split('/')[2]}`;
-                        video2.style.display = 'block';
-                        player2 = new Vimeo.Player(video2);
-                    }
-                    currentPlayer = player1;
-                }
-            })
-            .catch(error => {
-                console.error('Errore nel recupero dei video:', error);
-                errorMessage.textContent = 'Errore nel caricamento dei video!';
-                errorMessage.style.display = 'block';
-            });
-        }
-
-        // Gestione degli eventi dei pulsanti
+        // Funzione per passare da un video all'altro
         switchButton.addEventListener('click', () => {
             currentPlayer.getCurrentTime().then(currentTime => {
                 const otherPlayer = currentPlayer === player1 ? player2 : player1;
+
                 currentPlayer.pause().then(() => {
                     if (currentPlayer === player1) {
                         video1.style.display = 'none';
@@ -161,42 +167,65 @@
                         video2.style.display = 'none';
                         video1.style.display = 'block';
                     }
+
+                    // Imposta il tempo per il nuovo video e riproduci
                     otherPlayer.setCurrentTime(currentTime).then(() => {
-                        otherPlayer.play();
-                    }).catch(error => {
+                        otherPlayer.play();  // Assicurati di riprodurre il video
+                    }).catch((error) => {
                         console.error('Errore nel riprodurre il video:', error);
                     });
-                    currentPlayer = otherPlayer;
+
+                    currentPlayer = otherPlayer; // Aggiorna il giocatore corrente
                 });
             });
         });
 
+        // Muovi avanti di 5 secondi
         forwardButton.addEventListener('click', () => {
-            currentPlayer.getCurrentTime().then(seconds => {
+            currentPlayer.getCurrentTime().then(function (seconds) {
                 currentPlayer.setCurrentTime(seconds + 5);
             });
         });
 
+        // Muovi indietro di 5 secondi
         backwardButton.addEventListener('click', () => {
-            currentPlayer.getCurrentTime().then(seconds => {
-                currentPlayer.setCurrentTime(Math.max(0, seconds - 5));
+            currentPlayer.getCurrentTime().then(function (seconds) {
+                currentPlayer.setCurrentTime(Math.max(0, seconds - 5)); // Evita di andare a un tempo negativo
             });
         });
 
+        // Gestisci la modalità a schermo intero
         fullscreenBtn.addEventListener('click', () => {
             if (!document.fullscreenElement) {
-                videoContainer.requestFullscreen();
+                if (videoContainer.requestFullscreen) {
+                    videoContainer.requestFullscreen();
+                } else if (videoContainer.mozRequestFullScreen) { // Firefox
+                    videoContainer.mozRequestFullScreen();
+                } else if (videoContainer.webkitRequestFullscreen) { // Chrome, Safari e Opera
+                    videoContainer.webkitRequestFullscreen();
+                } else if (videoContainer.msRequestFullscreen) { // IE/Edge
+                    videoContainer.msRequestFullscreen();
+                }
             } else {
-                document.exitFullscreen();
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
             }
         });
 
         document.addEventListener('fullscreenchange', () => {
-            fullscreenBtn.innerText = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+            handleFullscreenChange();
         });
 
-        // Chiamata iniziale per caricare i video
-        loadVideos();
+        function handleFullscreenChange() {
+            if (!document.fullscreenElement) {
+                fullscreenBtn.innerText = 'Fullscreen';
+            } else {
+                fullscreenBtn.innerText = 'Exit Fullscreen';
+            }
+        }
     </script>
+
 </body>
+
 </html>
