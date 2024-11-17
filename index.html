@@ -118,6 +118,8 @@
                 .then(response => response.json())
                 .then(data => {
                     // Filtra i video in base al nome
+                    
+                    console.log("Risposta API Vimeo:", data);  
                     const videos = data.data;
                     const firstVideo = videos.find(video => video.name === video1Name);
                     const secondVideo = videos.find(video => video.name === video2Name);
