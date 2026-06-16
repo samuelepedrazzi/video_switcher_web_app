@@ -1,233 +1,889 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Switcher with Custom Controls</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Video Switcher</title>
     <style>
-        body {
-            text-align: center;
-            margin: 0;
-            overflow: hidden;
-            /* Nasconde eventuali barre di scorrimento */
-        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+        /* ─── Global button reset ─────────────────────────────────── */
+        button {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            outline: none;
+        }
+        button:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.35);
+            outline-offset: 3px;
+        }
+        button svg        { pointer-events: none; }
+        button svg text   { user-select: none; -webkit-user-select: none; }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            color: white;
+        /* ─── Layout ──────────────────────────────────────────────── */
         .video-container {
             position: relative;
-            display: inline-block;
             width: 100vw;
-            /* Usa tutta la larghezza della finestra */
             height: 100vh;
-            /* Usa tutta l'altezza della finestra */
         }
 
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-            /* Rimuovi bordi dall'iframe */
-        }
-
-        .controls {
+        /*  Shadow Play: both wrappers always in the DOM.
+            The inactive one (opacity:0) keeps buffering.
+            On switch we just swap opacity → instant, full quality.  */
+        .player-wrapper {
             position: absolute;
-            bottom: 20px;
-            /* Posiziona i controlli a 20px dal fondo */
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            z-index: 10;
+            inset: 0;
+            transition: opacity 0.2s ease;
+            background: #000;
+        }
+        .player-wrapper.shadow {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .player-wrapper iframe {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            border: none !important;
         }
 
-        .controls button,
-        .fullscreen-button {
-            color: white;
-            background: rgba(51, 51, 51, 0.8);
-            /* Sfondo semi-trasparente per i pulsanti */
-            border: none;
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 20px;
+        /* ─── Loading screen ──────────────────────────────────────── */
+        #loadingScreen {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            background: rgba(0,0,0,0.92);
+        }
+        #loadingScreen p {
+            color: rgba(255,255,255,0.55);
             font-size: 14px;
         }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(255,255,255,0.12);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #errorMsg {
+            color: #f87171;
+            font-size: 13px;
+            text-align: center;
+            max-width: 360px;
+            line-height: 1.7;
+            display: none;
+        }
 
-        .fullscreen-button {
+        /* ─── Start screen ────────────────────────────────────────── */
+        #startScreen {
             position: absolute;
-            top: 10px;
-            /* Posiziona il pulsante fullscreen in alto a destra */
-            right: 10px;
+            inset: 0;
+            z-index: 40;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(5px);
+        }
+        #startTitle {
+            font-size: 15px;
+            font-weight: 500;
+            color: rgba(255,255,255,0.6);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .start-play-btn {
+            width: 72px; height: 72px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.6);
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(12px);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s, transform 0.15s, border-color 0.2s;
+        }
+        .start-play-btn:hover {
+            background: rgba(255,255,255,0.22);
+            border-color: white;
+            transform: scale(1.07);
+        }
+        .start-play-btn:active { transform: scale(0.97); }
+
+        /* ─── Top bar ─────────────────────────────────────────────── */
+        .top-bar {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            padding: 20px 24px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.72) 0%, transparent 100%);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .fs-btn {
+            pointer-events: all;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.18);
+            backdrop-filter: blur(12px);
+            color: white; cursor: pointer;
+            border-radius: 12px; width: 44px; height: 44px;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.18s, transform 0.12s;
+        }
+        .fs-btn:hover  { background: rgba(255,255,255,0.18); }
+        .fs-btn:active { transform: scale(0.92); }
+
+        /* ─── Bottom controls ─────────────────────────────────────── */
+        .controls {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            padding: 72px 28px 28px;
+            background: linear-gradient(0deg, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.4) 65%, transparent 100%);
+            display: flex; flex-direction: column; align-items: center; gap: 16px;
+            z-index: 20;
+        }
+        .progress-row {
+            width: 100%; max-width: 880px;
+            display: flex; align-items: center; gap: 14px;
+        }
+        .time-label {
+            color: rgba(255,255,255,0.72);
+            font-size: 12px; font-weight: 500;
+            font-variant-numeric: tabular-nums;
+            min-width: 40px;
+        }
+        .time-label.right { text-align: right; }
+        .progress-track {
+            flex: 1; height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px; cursor: pointer; position: relative;
+            transition: height 0.15s;
+        }
+        .progress-track:hover { height: 6px; }
+        .progress-track.dragging { height: 6px; }
+        .progress-fill {
+            height: 100%; background: white; border-radius: 4px; width: 0%;
+            pointer-events: none;
+        }
+        /* Hover tooltip showing target timestamp */
+        .progress-hover {
+            position: absolute;
+            bottom: 16px;
+            transform: translateX(-50%);
+            background: rgba(20,20,20,0.92);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+            padding: 4px 9px;
+            border-radius: 6px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s;
+            white-space: nowrap;
+            z-index: 30;
+        }
+        .progress-hover.show { opacity: 1; }
+
+        /* Seek loading overlay (spinner over video while buffering) */
+        .seek-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.25);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 15;
+        }
+        .seek-overlay.show { opacity: 1; }
+        .seek-overlay .spinner {
+            width: 52px; height: 52px;
+            border-width: 4px;
+        }
+        .buttons-row { display: flex; align-items: center; gap: 10px; }
+        .round-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.16);
+            backdrop-filter: blur(10px);
+            color: white; cursor: pointer;
+            border-radius: 50%; width: 50px; height: 50px;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.18s, transform 0.12s;
+            position: relative; flex-shrink: 0;
+        }
+        .round-btn:hover  { background: rgba(255,255,255,0.2); }
+        .round-btn:active { transform: scale(0.9); }
+        .play-btn {
+            width: 60px; height: 60px;
+            background: rgba(255,255,255,0.16);
+            border-color: rgba(255,255,255,0.3);
+        }
+        .switch-btn {
+            display: flex; align-items: center; gap: 8px;
+            background: #ffffff; color: #000000;
+            border: none; border-radius: 100px;
+            padding: 0 24px; height: 50px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            letter-spacing: 0.01em;
+            transition: background 0.18s, transform 0.12s, box-shadow 0.18s;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            flex-shrink: 0;
+        }
+        .switch-btn:hover {
+            background: #e8e8e8;
+            box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+            transform: translateY(-1px);
+        }
+        .switch-btn:active   { transform: scale(0.96) translateY(0); }
+        .switch-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+        .kbd-hint { display: flex; gap: 14px; margin-top: 2px; }
+        .kbd-hint span { color: rgba(255,255,255,0.35); font-size: 11px; }
+        .kbd-hint kbd {
+            display: inline-block;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 5px; padding: 1px 5px;
+            font-family: inherit; font-size: 10px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* ─── Toast ───────────────────────────────────────────────── */
+        .toast {
+            position: absolute;
+            top: 70px; left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background: rgba(30,30,30,0.85);
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(16px);
+            color: rgba(255,255,255,0.9);
+            padding: 10px 20px; border-radius: 100px;
+            font-size: 13px; font-weight: 500;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.22s, transform 0.22s;
+            z-index: 25; white-space: nowrap;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ─── Quality badge ───────────────────────────────────────── */
+        .quality-badge {
+            position: absolute;
+            top: 10px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.55);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(8px);
+            color: rgba(255,255,255,0.6);
+            padding: 4px 12px; border-radius: 100px;
+            font-size: 11px; font-weight: 500;
+            z-index: 21; pointer-events: none;
+            opacity: 0; transition: opacity 0.4s;
         }
     </style>
 </head>
-
 <body>
 
-    <div class="video-container" id="videoContainer">
-        <!-- Video da caricare dinamicamente -->
-        <iframe id="video1" src="" title="Video 1" style="display:none;"></iframe>
-        <iframe id="video2" src="" title="Video 2" style="display:none;"></iframe>
+<div class="video-container" id="videoContainer">
 
-        <div class="controls">
-            <button id="backward">-5</button>
-            <button id="switchButton">Switch Video</button>
-            <button id="forward">+5</button>
-        </div>
+    <!-- Shadow Play: both wrappers always in DOM so Vimeo buffers both. -->
+    <div class="player-wrapper"        id="wrapper1"></div>
+    <div class="player-wrapper shadow" id="wrapper2"></div>
 
-        <button class="fullscreen-button" id="fullscreenBtn">Fullscreen</button>
+    <!-- Seek loading overlay (spinner shown while active player buffers) -->
+    <div class="seek-overlay" id="seekOverlay">
+        <div class="spinner"></div>
     </div>
 
-    <script src="https://player.vimeo.com/api/player.js"></script>
-    <script>
-        // Aggiungi il tuo access token qui
-        const accessToken = 'a9b22d79485ad20611e2902ee3096dfe'; // Inserisci il tuo token di accesso Vimeo
+    <!-- Loading / error screen -->
+    <div id="loadingScreen">
+        <div class="spinner" id="loadingSpinner"></div>
+        <p id="loadingMsg">Loading…</p>
+        <p id="errorMsg"></p>
+    </div>
 
-        const video1 = document.getElementById('video1');
-        const video2 = document.getElementById('video2');
-        const switchButton = document.getElementById('switchButton');
-        const forwardButton = document.getElementById('forward');
-        const backwardButton = document.getElementById('backward');
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
-        const videoContainer = document.getElementById('videoContainer');
+    <!-- Start screen (shown after both players are ready) -->
+    <div id="startScreen">
+        <span id="startTitle"></span>
+        <button class="start-play-btn" id="startBtn" aria-label="Play">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                <polygon points="6 3 20 12 6 21 6 3"/>
+            </svg>
+        </button>
+    </div>
 
-        let player1, player2;
-        let currentPlayer;
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
 
-        // Funzione per ottenere il parametro 'game' dalla query string
-        function getGameParam() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('game');
+    <!-- Quality badge -->
+    <div class="quality-badge" id="qualityBadge"></div>
+
+    <!-- Top bar -->
+    <div class="top-bar">
+        <button class="fs-btn" id="fullscreenBtn" aria-label="Fullscreen">
+            <svg id="fsEnter" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+            <svg id="fsExit" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 style="display:none">
+                <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+                <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Bottom controls -->
+    <div class="controls">
+        <div class="progress-row">
+            <span class="time-label" id="currentTime">0:00</span>
+            <div class="progress-track" id="progressTrack">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-hover" id="progressHover">0:00</div>
+            </div>
+            <span class="time-label right" id="totalTime">0:00</span>
+        </div>
+        <div class="buttons-row">
+
+            <!-- −10s -->
+            <button class="round-btn" id="backwardBtn" aria-label="-10 seconds">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                    <text x="12" y="17" text-anchor="middle" font-size="6" font-weight="700" font-family="system-ui,sans-serif">10</text>
+                </svg>
+            </button>
+
+            <!-- Play / Pause -->
+            <button class="round-btn play-btn" id="playPauseBtn" aria-label="Play / Pause">
+                <svg id="iconPlay" width="23" height="23" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="6 3 20 12 6 21 6 3"/>
+                </svg>
+                <svg id="iconPause" width="23" height="23" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+                    <rect x="6"  y="4" width="4" height="16" rx="1.2"/>
+                    <rect x="14" y="4" width="4" height="16" rx="1.2"/>
+                </svg>
+            </button>
+
+            <!-- +10s -->
+            <button class="round-btn" id="forwardBtn" aria-label="+10 seconds">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6v4l5-5-5-5v4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8h-2z"/>
+                    <text x="12" y="17" text-anchor="middle" font-size="6" font-weight="700" font-family="system-ui,sans-serif">10</text>
+                </svg>
+            </button>
+
+            <!-- Switch Camera (primary CTA) -->
+            <button class="switch-btn" id="switchBtn" aria-label="Switch Camera">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M23 7 16 1v4H8a6 6 0 0 0-6 6"/>
+                    <path d="M1 17l7 6v-4h8a6 6 0 0 0 6-6"/>
+                </svg>
+                Switch Camera
+            </button>
+
+        </div>
+        <div class="kbd-hint">
+            <span><kbd>Space</kbd> Play/Pause</span>
+            <span><kbd>J</kbd><kbd>L</kbd> ±10s</span>
+            <span><kbd>S</kbd> Switch</span>
+            <span><kbd>F</kbd> Fullscreen</span>
+        </div>
+    </div>
+</div>
+
+<script src="https://player.vimeo.com/api/player.js"></script>
+<script>
+    // ═══════════════════════════════════════════════════════════
+    //  DOM refs
+    // ═══════════════════════════════════════════════════════════
+    const wrapper1       = document.getElementById('wrapper1');
+    const wrapper2       = document.getElementById('wrapper2');
+    const loadingScreen  = document.getElementById('loadingScreen');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const loadingMsg     = document.getElementById('loadingMsg');
+    const errorMsg       = document.getElementById('errorMsg');
+    const startScreen    = document.getElementById('startScreen');
+    const startTitle     = document.getElementById('startTitle');
+    const startBtn       = document.getElementById('startBtn');
+    const switchBtn      = document.getElementById('switchBtn');
+    const forwardBtn     = document.getElementById('forwardBtn');
+    const backwardBtn    = document.getElementById('backwardBtn');
+    const playPauseBtn   = document.getElementById('playPauseBtn');
+    const fullscreenBtn  = document.getElementById('fullscreenBtn');
+    const videoContainer = document.getElementById('videoContainer');
+    const progressTrack  = document.getElementById('progressTrack');
+    const progressFill   = document.getElementById('progressFill');
+    const currentTimeEl  = document.getElementById('currentTime');
+    const totalTimeEl    = document.getElementById('totalTime');
+    const camLabel       = null; // cam badge removed from UI
+    const iconPlay       = document.getElementById('iconPlay');
+    const iconPause      = document.getElementById('iconPause');
+    const fsEnter        = document.getElementById('fsEnter');
+    const fsExit         = document.getElementById('fsExit');
+    const toast          = document.getElementById('toast');
+    const qualityBadge   = document.getElementById('qualityBadge');
+
+    // ═══════════════════════════════════════════════════════════
+    //  State
+    // ═══════════════════════════════════════════════════════════
+    let player1, player2;
+    let activePlayer, shadowPlayer;
+    let activeWrapper  = wrapper1;
+    let shadowWrapper  = wrapper2;
+    let activeCam      = 'A';
+    let hasStarted     = false;
+    let isSwitching    = false;
+    let toastTimer     = null;
+    let qualityTimer   = null;
+    let syncInterval   = null;
+    let readyCount     = 0;
+    let videoDuration  = 0;
+    let p1Buffering    = false;
+    let p2Buffering    = false;
+    let isDragging       = false;  // user is dragging the progress handle
+    let pendingSeekTime  = 0;      // time to seek to on drag release
+    let shadowSeekTimer  = null;   // (reserved for future use)
+    let seekOverlayTimer = null;   // debounce for seek-overlay spinner
+    let dragSeekDebounce = null;   // debounced shadow pre-seek during drag
+    let lastShadowPreseek = -1;    // last shadow pre-seek target (avoid duplicates)
+
+    const seekOverlay  = document.getElementById('seekOverlay');
+    const progressHover = document.getElementById('progressHover');
+
+    // ═══════════════════════════════════════════════════════════
+    //  CONFIG LOADING
+    //
+    //  Reads ?config=<name> from the URL, fetches
+    //  configs/<name>.json, then initialises both Vimeo players.
+    //
+    //  Config JSON format:
+    //  {
+    //    "title":  "2026-06-08 20:30 C5",
+    //    "videoA": "123456789",            ← public video ID
+    //    "videoB": "987654321/abcdef1234"  ← unlisted: ID/hash
+    //  }
+    // ═══════════════════════════════════════════════════════════
+    (async function bootstrap() {
+        const raw = new URLSearchParams(window.location.search).get('config');
+        if (!raw || !/^[\w-]+$/.test(raw)) {
+            showError(
+                'Missing or invalid <code>?config=</code> parameter.<br>' +
+                'Example: <code>index.html?config=2026-06-08-2030-c5</code>'
+            );
+            return;
         }
 
-        // Funzione per ottenere i video dal tuo account Vimeo
-        function getVimeoVideos() {
-            const gameParam = getGameParam();
-
-            if (gameParam) {
-                // Crea i nomi dei video in base al parametro game
-                const video1Name = gameParam + '_A'; // Il nome del primo video
-                const video2Name = gameParam + '_B'; // Il nome del secondo video
-
-                fetch('https://api.vimeo.com/me/videos', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}` // Usa il tuo token di accesso qui
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    // Filtra i video in base al nome
-                    
-                    console.log("Risposta API Vimeo:", data);  
-                    const videos = data.data;
-                    const firstVideo = videos.find(video => video.name === video1Name);
-                    const secondVideo = videos.find(video => video.name === video2Name);
-
-                    if (firstVideo) {
-                        const embedUrl1 = `https://player.vimeo.com/video/${firstVideo.uri.split('/')[2]}`;
-                        video1.src = embedUrl1;
-                        video1.style.display = 'block';
-                        player1 = new Vimeo.Player(video1);
-                    } else {
-                        console.log(`Video con nome ${video1Name} non trovato`);
-                    }
-
-                    if (secondVideo) {
-                        const embedUrl2 = `https://player.vimeo.com/video/${secondVideo.uri.split('/')[2]}`;
-                        video2.src = embedUrl2;
-                        video2.style.display = 'block';
-                        player2 = new Vimeo.Player(video2);
-                    } else {
-                        console.log(`Video con nome ${video2Name} non trovato`);
-                    }
-
-                    // Imposta il player corrente
-                    currentPlayer = player1 || player2; // Se il primo video non è trovato, usa il secondo
-                })
-                .catch(error => {
-                    console.error('Errore nel recupero dei video:', error);
-                });
-            } else {
-                console.log('Parametro game non trovato nell\'URL.');
-            }
+        loadingMsg.textContent = 'Loading config…';
+        let cfg;
+        try {
+            const res = await fetch('configs/' + raw + '.json');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            cfg = await res.json();
+        } catch (e) {
+            showError(
+                'Config file not found:<br><code>configs/' + raw + '.json</code>'
+            );
+            return;
         }
 
-        // Chiamata alla funzione per ottenere i video al caricamento della pagina
-        getVimeoVideos();
-
-        // Funzione per passare da un video all'altro
-        switchButton.addEventListener('click', () => {
-            currentPlayer.getCurrentTime().then(currentTime => {
-                const otherPlayer = currentPlayer === player1 ? player2 : player1;
-
-                currentPlayer.pause().then(() => {
-                    if (currentPlayer === player1) {
-                        video1.style.display = 'none';
-                        video2.style.display = 'block';
-                    } else {
-                        video2.style.display = 'none';
-                        video1.style.display = 'block';
-                    }
-
-                    // Imposta il tempo per il nuovo video e riproduci
-                    otherPlayer.setCurrentTime(currentTime).then(() => {
-                        otherPlayer.play();  // Assicurati di riprodurre il video
-                    }).catch((error) => {
-                        console.error('Errore nel riprodurre il video:', error);
-                    });
-
-                    currentPlayer = otherPlayer; // Aggiorna il giocatore corrente
-                });
-            });
-        });
-
-        // Muovi avanti di 5 secondi
-        forwardButton.addEventListener('click', () => {
-            currentPlayer.getCurrentTime().then(function (seconds) {
-                currentPlayer.setCurrentTime(seconds + 5);
-            });
-        });
-
-        // Muovi indietro di 5 secondi
-        backwardButton.addEventListener('click', () => {
-            currentPlayer.getCurrentTime().then(function (seconds) {
-                currentPlayer.setCurrentTime(Math.max(0, seconds - 5)); // Evita di andare a un tempo negativo
-            });
-        });
-
-        // Gestisci la modalità a schermo intero
-        fullscreenBtn.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                if (videoContainer.requestFullscreen) {
-                    videoContainer.requestFullscreen();
-                } else if (videoContainer.mozRequestFullScreen) { // Firefox
-                    videoContainer.mozRequestFullScreen();
-                } else if (videoContainer.webkitRequestFullscreen) { // Chrome, Safari e Opera
-                    videoContainer.webkitRequestFullscreen();
-                } else if (videoContainer.msRequestFullscreen) { // IE/Edge
-                    videoContainer.msRequestFullscreen();
-                }
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                }
-            }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-            handleFullscreenChange();
-        });
-
-        function handleFullscreenChange() {
-            if (!document.fullscreenElement) {
-                fullscreenBtn.innerText = 'Fullscreen';
-            } else {
-                fullscreenBtn.innerText = 'Exit Fullscreen';
-            }
+        if (!cfg.videoA || !cfg.videoB) {
+            showError('Config is missing <code>videoA</code> or <code>videoB</code>.');
+            return;
         }
-    </script>
 
+        const title = cfg.title || raw;
+        document.title    = title + ' — Video Switcher';
+        startTitle.textContent = title;
+
+        loadingMsg.textContent = 'Loading videos… (0/2)';
+        initPlayers(
+            'https://vimeo.com/' + cfg.videoA,
+            'https://vimeo.com/' + cfg.videoB
+        );
+    })();
+
+    // ═══════════════════════════════════════════════════════════
+    //  Player initialisation
+    // ═══════════════════════════════════════════════════════════
+    function initPlayers(urlA, urlB) {
+        player1 = new Vimeo.Player(wrapper1, {
+            url: urlA, autopause: false, controls: false,
+            responsive: true, quality: '1080p'
+        });
+        player2 = new Vimeo.Player(wrapper2, {
+            url: urlB, autopause: false, controls: false,
+            responsive: true, muted: true, quality: '1080p'
+        });
+
+        activePlayer = player1;
+        shadowPlayer = player2;
+
+        player1.ready().then(onPlayerReady)
+            .catch(() => showError('Camera A could not load.<br>Check the Vimeo ID / privacy settings.'));
+        player2.ready().then(onPlayerReady)
+            .catch(() => showError('Camera B could not load.<br>Check the Vimeo ID / privacy settings.'));
+
+        // Buffer tracking
+        player1.on('bufferstart', () => { p1Buffering = true; updateSeekOverlay(); });
+        player1.on('bufferend',   () => {
+            p1Buffering = false;
+            updateSeekOverlay();
+        });
+        player2.on('bufferstart', () => { p2Buffering = true; updateSeekOverlay(); });
+        player2.on('bufferend',   () => {
+            p2Buffering = false;
+            updateSeekOverlay();
+        });
+        // Fallback: seeked fires even when content is cached (no bufferstart/end)
+        player1.on('seeked', () => setTimeout(() => {
+            if (isSwitching) return;
+            p1Buffering = false;
+            updateSeekOverlay();
+        }, 300));
+        player2.on('seeked', () => setTimeout(() => {
+            if (isSwitching) return;
+            p2Buffering = false;
+            updateSeekOverlay();
+        }, 300));
+
+        // Progress bar
+        player1.on('timeupdate', ({ seconds, duration }) => {
+            if (activePlayer !== player1) return;
+            videoDuration = duration;
+            updateProgress(seconds, duration);
+        });
+        player2.on('timeupdate', ({ seconds, duration }) => {
+            if (activePlayer !== player2) return;
+            videoDuration = duration;
+            updateProgress(seconds, duration);
+        });
+
+        // Play/pause icons
+        player1.on('play',  () => { if (activePlayer === player1) updatePlayPauseIcon(false); });
+        player1.on('pause', () => { if (activePlayer === player1) updatePlayPauseIcon(true);  });
+        player2.on('play',  () => { if (activePlayer === player2) updatePlayPauseIcon(false); });
+        player2.on('pause', () => { if (activePlayer === player2) updatePlayPauseIcon(true);  });
+
+        // Quality badge (no mirroring — each player handles its own ABR)
+        player1.on('qualitychange', ({ quality }) => {
+            if (activePlayer === player1) onQualityChange(quality);
+        });
+        player2.on('qualitychange', ({ quality }) => {
+            if (activePlayer === player2) onQualityChange(quality);
+        });
+    }
+
+    function onPlayerReady() {
+        readyCount++;
+        loadingMsg.textContent = 'Loading videos… (' + readyCount + '/2)';
+        if (readyCount < 2) return;
+        shadowPlayer.setVolume(0).catch(() => {});
+        loadingScreen.style.display = 'none';
+        startScreen.style.display   = 'flex';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Start
+    // ═══════════════════════════════════════════════════════════
+    startBtn.addEventListener('click', startBoth);
+
+    async function startBoth() {
+        if (hasStarted) return;
+        hasStarted = true;
+        startScreen.style.opacity = '0';
+        startScreen.style.transition = 'opacity 0.3s';
+        setTimeout(() => startScreen.style.display = 'none', 320);
+        try {
+            await Promise.all([activePlayer.play(), shadowPlayer.play()]);
+        } catch (_) {
+            try { await activePlayer.play(); } catch (_) {}
+        }
+        syncInterval = setInterval(syncShadow, 2000);
+        updatePlayPauseIcon(false);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Drift correction
+    // ═══════════════════════════════════════════════════════════
+    async function syncShadow() {
+        if (isSwitching || isDragging) return;
+        try {
+            const [at, st] = await Promise.all([
+                activePlayer.getCurrentTime(),
+                shadowPlayer.getCurrentTime()
+            ]);
+            if (Math.abs(at - st) > 1.0) shadowPlayer.setCurrentTime(at).catch(() => {});
+        } catch (_) {}
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Play / Pause
+    // ═══════════════════════════════════════════════════════════
+    playPauseBtn.addEventListener('click', async () => {
+        if (!hasStarted) { startBoth(); return; }
+        try {
+            const paused = await activePlayer.getPaused();
+            if (paused) await Promise.all([activePlayer.play(),  shadowPlayer.play()]);
+            else        await Promise.all([activePlayer.pause(), shadowPlayer.pause()]);
+        } catch (_) {}
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  Skip ±10s
+    // ═══════════════════════════════════════════════════════════
+    forwardBtn.addEventListener('click', async () => {
+        if (!hasStarted) return;
+        try {
+            const [cur, dur] = await Promise.all([activePlayer.getCurrentTime(), activePlayer.getDuration()]);
+            commitSeek(Math.min(cur + 10, dur));
+        } catch (_) {}
+    });
+
+    backwardBtn.addEventListener('click', async () => {
+        if (!hasStarted) return;
+        try {
+            const cur = await activePlayer.getCurrentTime();
+            commitSeek(Math.max(cur - 10, 0));
+        } catch (_) {}
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  Progress bar — hover tooltip + drag + deferred shadow seek
+    //
+    //  Why this is faster than the old click-and-seek-both:
+    //   • Active player gets the seek IMMEDIATELY on release
+    //   • Shadow player is seeked 1.5 s later, so all bandwidth
+    //     goes to the visible video first
+    //   • Drag lets the user pick the exact spot before committing
+    //   • Hover tooltip previews the target timestamp
+    // ═══════════════════════════════════════════════════════════
+    function getRatio(e) {
+        const rect = progressTrack.getBoundingClientRect();
+        const x = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+        return Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    }
+
+    function previewSeek(ratio) {
+        const t = ratio * videoDuration;
+        progressFill.style.width  = (ratio * 100) + '%';
+        currentTimeEl.textContent = formatTime(t);
+        pendingSeekTime = t;
+
+        // Pre-seek the shadow player while user is still dragging. Debounced
+        // so we don't flood Vimeo with seek requests during fast drags — only
+        // fires when the drag pauses for 400 ms. Result: when the user releases
+        // the handle, the shadow is already (mostly) buffered at the target,
+        // so the next Switch click is near-instant.
+        clearTimeout(dragSeekDebounce);
+        if (isDragging && hasStarted) {
+            dragSeekDebounce = setTimeout(() => {
+                if (Math.abs(t - lastShadowPreseek) < 2) return; // skip duplicates
+                lastShadowPreseek = t;
+                shadowPlayer.setCurrentTime(t).catch(() => {});
+            }, 400);
+        }
+    }
+
+    function commitSeek(t) {
+        // Cancel any pending drag pre-seek
+        clearTimeout(dragSeekDebounce);
+        clearTimeout(shadowSeekTimer);
+        lastShadowPreseek = t;
+
+        // Seek BOTH players in parallel. Costs ~2x bandwidth for a few
+        // seconds, but guarantees the next Switch click is near-instant.
+        // The Shadow Play architecture already streams both videos in
+        // parallel, so this is just a temporary spike during the seek.
+        activePlayer.setCurrentTime(t).catch(() => {});
+        shadowPlayer.setCurrentTime(t).catch(() => {});
+    }
+
+    // ─── Mouse: hover tooltip ─────────────────────────────────
+    progressTrack.addEventListener('mousemove', (e) => {
+        if (!videoDuration) return;
+        const ratio = getRatio(e);
+        const t = ratio * videoDuration;
+        progressHover.textContent = formatTime(t);
+        progressHover.style.left  = (ratio * 100) + '%';
+        progressHover.classList.add('show');
+    });
+    progressTrack.addEventListener('mouseleave', () => {
+        if (!isDragging) progressHover.classList.remove('show');
+    });
+
+    // ─── Pointer events: unified drag (mouse + touch + pen) ────
+    //  Why pointer events instead of mouse/touch separately:
+    //   • single event model = no conflicts between mouse and touch
+    //   • setPointerCapture() guarantees we keep receiving moves even
+    //     when the cursor leaves the track → no "stuck drag" bugs
+    //   • simple click (down + up without moving) also seeks correctly
+    progressTrack.addEventListener('pointerdown', (e) => {
+        if (!hasStarted || !videoDuration) return;
+        e.preventDefault();
+        isDragging = true;
+        progressTrack.classList.add('dragging');
+        progressTrack.setPointerCapture(e.pointerId);
+        document.body.style.userSelect = 'none';
+        previewSeek(getRatio(e));
+    });
+    progressTrack.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+        previewSeek(getRatio(e));
+    });
+    function endDrag(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        progressTrack.classList.remove('dragging');
+        try { progressTrack.releasePointerCapture(e.pointerId); } catch (_) {}
+        document.body.style.userSelect = '';
+        progressHover.classList.remove('show');
+        commitSeek(pendingSeekTime);
+    }
+    progressTrack.addEventListener('pointerup',     endDrag);
+    progressTrack.addEventListener('pointercancel', endDrag);
+
+    // ─── Seek overlay (spinner over the video while buffering) ─────────
+    function updateSeekOverlay() {
+        const activeBuffering = (activePlayer === player1) ? p1Buffering : p2Buffering;
+        clearTimeout(seekOverlayTimer);
+        if (activeBuffering && hasStarted) {
+            // 250 ms delay avoids flashing for micro-stalls
+            seekOverlayTimer = setTimeout(() => seekOverlay.classList.add('show'), 250);
+        } else {
+            seekOverlay.classList.remove('show');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Switch Camera
+    // ═══════════════════════════════════════════════════════════
+    switchBtn.addEventListener('click', () => {
+        if (!hasStarted) return;
+        if (isSwitching) return;
+        // Always perform the switch immediately. No queueing, no "Syncing…"
+        // limbo — if the shadow isn't 100% buffered, Vimeo's native player
+        // will briefly show its own spinner, but the swap itself is instant.
+        performSwitch();
+    });
+
+    function isShadowBuffering() {
+        return shadowPlayer === player1 ? p1Buffering : p2Buffering;
+    }
+    async function performSwitch() {
+        isSwitching = true;
+        switchBtn.disabled = true;
+        try {
+            const currentTime = await activePlayer.getCurrentTime();
+            const prevActive  = activePlayer;
+            const prevShadow  = shadowPlayer;
+            activeWrapper.classList.add('shadow');
+            shadowWrapper.classList.remove('shadow');
+            [activeWrapper, shadowWrapper] = [shadowWrapper, activeWrapper];
+            [activePlayer,  shadowPlayer]  = [prevShadow,   prevActive];
+            activeCam = activeCam === 'A' ? 'B' : 'A';
+            // camLabel removed from UI — no longer updated
+            Promise.all([prevActive.setVolume(0), prevShadow.setVolume(1)]).catch(() => {});
+        } catch (_) {}
+        finally {
+            setTimeout(() => { isSwitching = false; switchBtn.disabled = false; }, 350);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Fullscreen
+    // ═══════════════════════════════════════════════════════════
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            (videoContainer.requestFullscreen?.() ||
+             videoContainer.mozRequestFullScreen?.() ||
+             videoContainer.webkitRequestFullscreen?.());
+        } else { document.exitFullscreen?.(); }
+    });
+    document.addEventListener('fullscreenchange', () => {
+        const full = !!document.fullscreenElement;
+        fsEnter.style.display = full ? 'none'  : 'block';
+        fsExit.style.display  = full ? 'block' : 'none';
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  Keyboard shortcuts
+    // ═══════════════════════════════════════════════════════════
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        switch (e.key) {
+            case ' ': case 'k': e.preventDefault(); playPauseBtn.click(); break;
+            case 'ArrowRight': case 'l': forwardBtn.click();  break;
+            case 'ArrowLeft':  case 'j': backwardBtn.click(); break;
+            case 's': case 'c': switchBtn.click();     break;
+            case 'f':           fullscreenBtn.click(); break;
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  Utilities
+    // ═══════════════════════════════════════════════════════════
+    function updateProgress(seconds, duration) {
+        if (!duration || isDragging) return;
+        progressFill.style.width  = (seconds / duration * 100) + '%';
+        currentTimeEl.textContent = formatTime(seconds);
+        totalTimeEl.textContent   = formatTime(duration);
+    }
+    function updatePlayPauseIcon(paused) {
+        iconPlay.style.display  = paused  ? 'inline' : 'none';
+        iconPause.style.display = !paused ? 'inline' : 'none';
+    }
+    function onQualityChange(quality) {
+        qualityBadge.textContent = '▲ ' + (quality === 'auto' ? 'Auto' : quality);
+        qualityBadge.classList.add('show');
+        clearTimeout(qualityTimer);
+        qualityTimer = setTimeout(() => qualityBadge.classList.remove('show'), 2500);
+    }
+    function formatTime(secs) {
+        if (!secs || isNaN(secs)) return '0:00';
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = Math.floor(secs % 60).toString().padStart(2, '0');
+        return h > 0 ? `${h}:${m.toString().padStart(2,'0')}:${s}` : `${m}:${s}`;
+    }
+
+    const _switchBtnHTML = switchBtn.innerHTML;
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+    function showError(msg) {
+        loadingSpinner.style.display = 'none';
+        loadingMsg.style.display     = 'none';
+        errorMsg.style.display       = 'block';
+        errorMsg.innerHTML           = '⚠️ ' + msg;
+    }
+</script>
 </body>
-
 </html>

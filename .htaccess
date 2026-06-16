@@ -1,0 +1,20 @@
+# ─── Sicurezza ─────────────────────────────────────────────
+# Impedisce di vedere la lista dei file delle cartelle
+Options -Indexes
+
+# Non rivelare la versione di Apache nei headers
+ServerSignature Off
+
+# ─── MIME types ───────────────────────────────────────────
+# Forza il content-type corretto per i JSON di config
+<IfModule mod_mime.c>
+    AddType application/json .json
+</IfModule>
+
+# ─── Cache ────────────────────────────────────────────────
+# I JSON cambiano spesso, niente cache
+<FilesMatch "\.json$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+</FilesMatch>

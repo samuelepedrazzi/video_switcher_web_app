@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local dev / experiments
+index_local.html
+index_vimeo_test.html
+*_test.html
+*_local.html
+test_*.html
+
+# Local media (do not commit large video files)
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+
+# Logs / temp
+*.log
+*.tmp
+.cache/
